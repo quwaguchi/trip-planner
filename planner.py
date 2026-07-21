@@ -56,12 +56,14 @@ REFINE_SYSTEM_PROMPT = """\
 def generate_plan(
     trip_input: str,
     review_issues: list[str] | None = None,
+    cache_name: str | None = None,
 ) -> str:
     """Generate a road trip plan from scratch.
 
     Args:
         trip_input: The full content of trip_input.md.
         review_issues: Optional list of issues from a previous OVERALL review rejection.
+        cache_name: Optional explicitly created Gemini Cache name for reusing trip_input context.
 
     Returns:
         The generated plan in Markdown format.
@@ -77,13 +79,14 @@ def generate_plan(
 
     provider = os.environ.get("PLANNER_PROVIDER")
     model = os.environ.get("PLANNER_MODEL")
-    return llm_client.generate(SYSTEM_PROMPT, user_prompt, use_search=False, provider=provider, model=model)
+    return llm_client.generate(SYSTEM_PROMPT, user_prompt, use_search=False, provider=provider, model=model, cache_name=cache_name)
 
 
 def refine_plan(
     plan: str,
     trip_input: str,
     review_issues: list[str],
+    cache_name: str | None = None,
 ) -> str:
     """Refine an existing plan based on detailed review issues.
 
@@ -91,6 +94,7 @@ def refine_plan(
         plan: The current plan that has some issues.
         trip_input: The full content of trip_input.md (for reference).
         review_issues: List of issues found in the detailed review.
+        cache_name: Optional explicitly created Gemini Cache name for reusing trip_input context.
 
     Returns:
         The refined plan in Markdown format.
@@ -109,5 +113,5 @@ def refine_plan(
 
     provider = os.environ.get("PLANNER_PROVIDER")
     model = os.environ.get("PLANNER_MODEL")
-    return llm_client.generate(REFINE_SYSTEM_PROMPT, user_prompt, use_search=False, provider=provider, model=model)
+    return llm_client.generate(REFINE_SYSTEM_PROMPT, user_prompt, use_search=False, provider=provider, model=model, cache_name=cache_name)
 

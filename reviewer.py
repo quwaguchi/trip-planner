@@ -119,12 +119,13 @@ def _parse_review_response(response: str) -> ReviewResult:
         )
 
 
-def review_overall(trip_input: str, plan: str) -> ReviewResult:
+def review_overall(trip_input: str, plan: str, cache_name: str | None = None) -> ReviewResult:
     """Review the overall structure of a generated plan against the trip constraints.
 
     Args:
         trip_input: The full content of trip_input.md (constraints).
         plan: The generated plan to review.
+        cache_name: Optional explicitly created Gemini Cache name for reusing trip_input context.
 
     Returns:
         A ReviewResult indicating whether the overall plan structure is approved.
@@ -140,16 +141,17 @@ def review_overall(trip_input: str, plan: str) -> ReviewResult:
     # 全体チェックは検索不要なので OpenAI の高速/安価なモデルを使うか、Gemini の検索なしで実行
     provider = os.environ.get("REVIEWER_OVERALL_PROVIDER")
     model = os.environ.get("REVIEWER_OVERALL_MODEL")
-    response = llm_client.generate(SYSTEM_PROMPT_OVERALL, user_prompt, use_search=False, provider=provider, model=model)
+    response = llm_client.generate(SYSTEM_PROMPT_OVERALL, user_prompt, use_search=False, provider=provider, model=model, cache_name=cache_name)
     return _parse_review_response(response)
 
 
-def review_detailed(trip_input: str, plan: str) -> ReviewResult:
+def review_detailed(trip_input: str, plan: str, cache_name: str | None = None) -> ReviewResult:
     """Review the detailed spots and existence in a generated plan.
 
     Args:
         trip_input: The full content of trip_input.md (constraints).
         plan: The generated plan to review.
+        cache_name: Optional explicitly created Gemini Cache name for reusing trip_input context.
 
     Returns:
         A ReviewResult indicating whether the detailed spots are approved.
@@ -165,5 +167,5 @@ def review_detailed(trip_input: str, plan: str) -> ReviewResult:
     # 詳細チェックは検索が必要なので Gemini を使う
     provider = os.environ.get("REVIEWER_DETAILED_PROVIDER")
     model = os.environ.get("REVIEWER_DETAILED_MODEL")
-    response = llm_client.generate(SYSTEM_PROMPT_DETAILED, user_prompt, use_search=True, provider=provider, model=model)
+    response = llm_client.generate(SYSTEM_PROMPT_DETAILED, user_prompt, use_search=True, provider=provider, model=model, cache_name=cache_name)
     return _parse_review_response(response)

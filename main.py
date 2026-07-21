@@ -84,51 +84,62 @@ def generate_and_review(trip_input: str) -> str | None:
     overall_issues: list[str] | None = None
     detailed_issues: list[str] | None = None
     plan: str | None = None
+    
+    # Try to create a shared cache for the trip_input context (used if Gemini is configured)
+    cache_name = None
+    try:
+        cache_name = llm_client.create_shared_cache(trip_input)
+    except Exception as e:
+        print(f"⚠️  [System] キャッシュの作成に失敗しました。通常の生成を続行します: {e}")
 
-    for attempt in range(1, MAX_REVIEW_RETRIES + 1):
-        if attempt == 1:
-            print("🤖 [Planner] プランを生成中...")
-            plan = planner.generate_plan(trip_input)
-        elif overall_issues:
-            print(f"🤖 [Planner] プラン全体を再生成中...（{attempt}/{MAX_REVIEW_RETRIES}）")
-            plan = planner.generate_plan(trip_input, overall_issues)
-        elif detailed_issues and plan is not None:
-            print(f"🤖 [Planner] プランの部分修正を実行中...（{attempt}/{MAX_REVIEW_RETRIES}）")
-            plan = planner.refine_plan(plan, trip_input, detailed_issues)
-
-        # Clear issues for this attempt
-        overall_issues = None
-        detailed_issues = None
-
-        # Stage 1: Overall Review
-        print("🔍 [Reviewer] 全体チェックを実行中...")
-        overall_result = reviewer.review_overall(trip_input, plan)
-
-        if not overall_result.approved:
-            print(f"⚠️  [Reviewer] 全体チェック不合格（試行 {attempt}/{MAX_REVIEW_RETRIES}）")
-            for issue in overall_result.issues:
-                print(f"   ・{issue}")
-            overall_issues = overall_result.issues
-            continue
-
-        # Stage 2: Detailed Review
-        print("🔍 [Reviewer] 詳細チェック（実在性・設備）を実行中...")
-        detailed_result = reviewer.review_detailed(trip_input, plan)
-
-        if not detailed_result.approved:
-            print(f"⚠️  [Reviewer] 詳細チェック不合格（試行 {attempt}/{MAX_REVIEW_RETRIES}）")
-            for issue in detailed_result.issues:
-                print(f"   ・{issue}")
-            detailed_issues = detailed_result.issues
-            continue
-
-        print("✅ [Reviewer] 全レビュー通過！")
-        return plan
-
-    print()
-    print("❌ レビューを通過できませんでした。")
-    print("   trip_input.md の確定条件を見直すか、再実行してください。")
-    return None
+    try:
+        for attempt in range(1, MAX_REVIEW_RETRIES + 1):
+            if attempt == 1:
+                print("🤖 [Planner] プランを生成中...")
+                plan = planner.generate_plan(trip_input, cache_name=cache_name)
+            elif overall_issues:
+                print(f"🤖 [Planner] プラン全体を再生成中...（{attempt}/{MAX_REVIEW_RETRIES}）")
+                plan = planner.generate_plan(trip_input, overall_issues, cache_name=cache_name)
+            elif detailed_issues and plan is not None:
+                print(f"🤖 [Planner] プランの部分修正を実行中...（{attempt}/{MAX_REVIEW_RETRIES}）")
+                plan = planner.refine_plan(plan, trip_input, detailed_issues, cache_name=cache_name)
+    
+            # Clear issues for this attempt
+            overall_issues = None
+            detailed_issues = None
+    
+            # Stage 1: Overall Review
+            print("🔍 [Reviewer] 全体チェックを実行中...")
+            overall_result = reviewer.review_overall(trip_input, plan, cache_name=cache_name)
+    
+            if not overall_result.approved:
+                print(f"⚠️  [Reviewer] 全体チェック不合格（試行 {attempt}/{MAX_REVIEW_RETRIES}）")
+                for issue in overall_result.issues:
+                    print(f"   ・{issue}")
+                overall_issues = overall_result.issues
+                continue
+    
+            # Stage 2: Detailed Review
+            print("🔍 [Reviewer] 詳細チェック（実在性・設備）を実行中...")
+            detailed_result = reviewer.review_detailed(trip_input, plan, cache_name=None)
+    
+            if not detailed_result.approved:
+                print(f"⚠️  [Reviewer] 詳細チェック不合格（試行 {attempt}/{MAX_REVIEW_RETRIES}）")
+                for issue in detailed_result.issues:
+                    print(f"   ・{issue}")
+                detailed_issues = detailed_result.issues
+                continue
+    
+            print("✅ [Reviewer] 全レビュー通過！")
+            return plan
+    
+        print()
+        print("❌ レビューを通過できませんでした。")
+        print("   trip_input.md の確定条件を見直すか、再実行してください。")
+        return None
+    finally:
+        if cache_name:
+            llm_client.delete_cache(cache_name)
 
 
 def ask_continue() -> bool:

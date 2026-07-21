@@ -24,7 +24,66 @@ def _get_provider() -> str:
     return os.environ.get("LLM_PROVIDER", "openai").lower()
 
 
-def _generate_with_gemini(system_prompt: str, user_prompt: str, use_search: bool = False, model: str | None = None) -> str:
+def create_shared_cache(content: str) -> str | None:
+    """Create a shared Gemini Cache resource for a given base content.
+    
+    Returns the cache name, or None if the default provider is not Gemini.
+    """
+    if _get_provider() != "gemini":
+        return None
+
+    from google import genai
+    from google.genai import types
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+        
+    client = genai.Client(api_key=api_key)
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+    
+    # Check token count
+    resp = client.models.count_tokens(model=model, contents=content)
+    token_count = resp.total_tokens
+    
+    # ---------------------------------------------------------
+    # TODO(Padding-Removal): GeminiのキャッシュAPIは仕様上「最低1024トークン」が必要です。
+    # trip_input.md の内容が豊富になり、自然に 1024 トークンを超えるようになった場合、
+    # または Gemini API の仕様変更で最小要件が撤廃された場合は、
+    # 以下の padding ロジックを安全に削除してください。
+    # ---------------------------------------------------------
+    if token_count < 1024:
+        # 1024トークンに到達するまでパディングを追加 (余裕を見て少し多めに追加)
+        padding_text = "\n" + "<!-- cache padding text to satisfy minimum token requirement -->\n" * 150
+        content += padding_text
+    
+    # Create cache (NO tools, NO system_instruction to avoid RemoteProtocolError/503 issues)
+    cache = client.caches.create(
+        model=model,
+        config=types.CreateCachedContentConfig(
+            contents=[content]
+        )
+    )
+    return cache.name
+
+
+def delete_cache(cache_name: str | None) -> None:
+    """Delete a Gemini Cache resource."""
+    if not cache_name or _get_provider() != "gemini":
+        return
+        
+    from google import genai
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if api_key:
+        client = genai.Client(api_key=api_key)
+        try:
+            client.caches.delete(name=cache_name)
+        except Exception as e:
+            print(f"   ⚠️ キャッシュの削除に失敗しました: {e}")
+
+
+def _generate_with_gemini(system_prompt: str, user_prompt: str, use_search: bool = False, model: str | None = None, cache_name: str | None = None) -> str:
+    import httpx
     from google import genai
     from google.genai import errors as genai_errors
 
@@ -39,11 +98,18 @@ def _generate_with_gemini(system_prompt: str, user_prompt: str, use_search: bool
     backoff = INITIAL_BACKOFF_SECONDS
     
     config_args = {
-        "system_instruction": system_prompt,
-        "temperature": 0.7,
+        "temperature": 0.9,
     }
-    if use_search:
-        config_args["tools"] = [{"google_search": {}}]
+    
+    # もし明示的キャッシュ(cache_name)を使う場合は、
+    # システムプロンプトをユーザープロンプトの先頭に手動で結合し、config側のシステムプロンプト設定は行わない
+    if cache_name:
+        config_args["cached_content"] = cache_name
+        user_prompt = f"System: {system_prompt}\n\nUser: {user_prompt}"
+    else:
+        config_args["system_instruction"] = system_prompt
+        if use_search:
+            config_args["tools"] = [{"google_search": {}}]
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -68,6 +134,13 @@ def _generate_with_gemini(system_prompt: str, user_prompt: str, use_search: bool
             if attempt == MAX_RETRIES:
                 raise APIError(f"Gemini APIサーバーエラー ({current_model}): {e}") from e
             print(f"   ⏳ サーバーエラー ({current_model})。{backoff:.0f}秒後にリトライ ({attempt}/{MAX_RETRIES})...")
+            time.sleep(backoff)
+            backoff *= BACKOFF_MULTIPLIER
+            
+        except httpx.RequestError as e:
+            if attempt == MAX_RETRIES:
+                raise APIError(f"Gemini APIネットワークエラー ({current_model}): {e}") from e
+            print(f"   ⏳ ネットワークエラー ({type(e).__name__})。{backoff:.0f}秒後にリトライ ({attempt}/{MAX_RETRIES})...")
             time.sleep(backoff)
             backoff *= BACKOFF_MULTIPLIER
 
@@ -129,7 +202,7 @@ def _generate_with_openai(system_prompt: str, user_prompt: str, model: str | Non
     raise APIError("OpenAI APIの予期しないエラーが発生しました。")
 
 
-def generate(system_prompt: str, user_prompt: str, use_search: bool = False, provider: str | None = None, model: str | None = None) -> str:
+def generate(system_prompt: str, user_prompt: str, use_search: bool = False, provider: str | None = None, model: str | None = None, cache_name: str | None = None) -> str:
     """Call the configured LLM API and return the text response.
 
     Args:
@@ -138,6 +211,7 @@ def generate(system_prompt: str, user_prompt: str, use_search: bool = False, pro
         use_search: If True, enables Grounding (Gemini only).
         provider: Optional. Explicitly specify 'openai' or 'gemini'. If None, uses LLM_PROVIDER from .env.
         model: Optional. Explicitly specify the model name. If None, uses the provider's default from .env.
+        cache_name: Optional. Explicitly specify the Gemini Cache name to reuse context.
 
     Returns:
         The model's text response.
@@ -150,7 +224,7 @@ def generate(system_prompt: str, user_prompt: str, use_search: bool = False, pro
     provider = provider.lower()
     
     if provider == "gemini":
-        return _generate_with_gemini(system_prompt, user_prompt, use_search, model=model)
+        return _generate_with_gemini(system_prompt, user_prompt, use_search, model=model, cache_name=cache_name)
     elif provider == "openai":
         if use_search:
             print("   ⚠️ OpenAIモデルでは検索グラウンディングはサポートされていないため、無効化されます。")
