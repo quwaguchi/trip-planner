@@ -21,9 +21,9 @@ SYSTEM_PROMPT = """\
    - おすすめの滞在時間
    - 前のスポットからのおおよその移動時間
 4. ユーザーの確定条件に記載された指示には必ず従ってください。
-5. **Google Mapsリンクのフォーマット（厳守）**: スポットごとに以下のMarkdownリンク形式で出力してください。スポット名はURLエンコードしてください:
-   `[📍 スポット名](https://www.google.com/maps/search/スポット名)`
-   例: `[📍 河口湖](https://www.google.com/maps/search/%E6%B2%B3%E5%8F%A3%E6%B9%96)`
+5. **Google Mapsリンクのフォーマット（厳守）**: スポットごとに以下のMarkdownリンク形式で出力してください。検索結果が複数出るのを防ぐため、検索クエリには必ず「スポット名」だけでなく「都市名や州、国名などの詳細な住所情報」も含めてURLエンコードしてください。:
+   `[📍 スポット名](https://www.google.com/maps/search/?api=1&query=スポット名+都市名+州など)`
+   例: `[📍 The Mountaineers Baker Lodge](https://www.google.com/maps/search/?api=1&query=The+Mountaineers+Baker+Lodge,+Deming,+WA)`
 6. 全体のスケジュールに無理がないよう、移動時間と滞在時間のバランスを考慮してください。
 7. プランの先頭にタイトルを `#` 見出しで付けてください（例: `# 🏔️ 信州アルプス＆温泉満喫の旅`）。
 
