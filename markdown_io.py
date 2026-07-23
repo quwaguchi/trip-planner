@@ -10,7 +10,7 @@ from datetime import datetime
 
 # Default file paths (relative to the working directory)
 DEFAULT_INPUT_PATH = "trip_input.md"
-DEFAULT_APPROVED_DIR = "approved_plan"
+DEFAULT_APPROVED_DIR = "approved_plans"
 DEFAULT_CURRENT_PLAN_PATH = "current_plan.md"
 
 
